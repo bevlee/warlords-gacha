@@ -5,3 +5,91 @@
 html {
   scrollbar-gutter: stable;
 }
+
+/* --- gacha rarity outlines: bronze → diamond, increasingly dazzling --- */
+@property --angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.unit-card {
+  border: 2px solid #27272a;
+  border-radius: 0.75rem;
+  background: #18181b;
+  transition: box-shadow 0.3s ease;
+}
+.rarity-unowned {
+  opacity: 0.4;
+}
+.rarity-unowned .sprite,
+.rarity-unowned svg,
+.rarity-unowned img {
+  filter: grayscale(1) brightness(0.4);
+}
+.rarity-bronze {
+  border-color: #a16207;
+}
+.rarity-silver {
+  border-color: #cbd5e1;
+  box-shadow: 0 0 6px rgba(203, 213, 225, 0.35);
+}
+.rarity-gold {
+  border-color: #facc15;
+  box-shadow: 0 0 10px rgba(250, 204, 21, 0.45);
+}
+.rarity-emerald {
+  border-color: #34d399;
+  box-shadow: 0 0 14px rgba(52, 211, 153, 0.55);
+}
+.rarity-ruby {
+  border-color: #f87171;
+  box-shadow: 0 0 18px rgba(248, 113, 113, 0.6);
+}
+.rarity-platinum {
+  border-color: #e5e7eb;
+  box-shadow: 0 0 22px rgba(229, 231, 235, 0.7);
+  animation: pulse-glow 2.5s ease-in-out infinite;
+}
+.rarity-diamond {
+  border-color: transparent;
+  background:
+    linear-gradient(#18181b, #18181b) padding-box,
+    conic-gradient(from var(--angle), #22d3ee, #a78bfa, #f472b6, #facc15, #22d3ee) border-box;
+  box-shadow: 0 0 28px rgba(34, 211, 238, 0.7);
+  animation: spin-border 3s linear infinite;
+}
+
+@keyframes pulse-glow {
+  50% {
+    box-shadow: 0 0 34px rgba(229, 231, 235, 0.95);
+  }
+}
+@keyframes spin-border {
+  to {
+    --angle: 360deg;
+  }
+}
+
+@keyframes card-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.just-pulled {
+  animation: card-pulse 0.6s ease-in-out 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rarity-platinum,
+  .rarity-diamond,
+  .just-pulled {
+    animation: none;
+  }
+}
