@@ -6,6 +6,7 @@ export * from './knight';
 export * from './wizard';
 export * from './factions';
 export * from './catalog';
+export * from './resolve';
 export * from './combat';
 export * from './turnOrder';
 export * from './ai';
