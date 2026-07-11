@@ -9,7 +9,7 @@
     recordBattle,
     applyPick,
     generateGauntletEnemy,
-    survivorsFrom,
+    toBattleArmy,
     encounterBudget,
     actOf,
     BOSS_NODES,
@@ -18,9 +18,11 @@
     type UnitCard,
     type GauntletEncounter,
   } from '$lib/gauntlet/run';
+  import { battleReward } from '$lib/gauntlet/economy';
+  import { gacha } from '$lib/gacha/state.svelte';
   import { loadRun, saveRun, clearRun } from '$lib/storage';
   import { TIER_STYLE } from '$lib/ui/tierStyle';
-  import type { FactionClass, UnitStack } from '$lib/engine/types';
+  import type { FactionClass } from '$lib/engine/types';
 
   const ACT_NAMES: Record<1 | 2 | 3, string> = {
     1: 'Act I — The Borderlands',
@@ -35,12 +37,17 @@
   let loaded = $state(false);
 
   onMount(async () => {
-    run = await loadRun<RunState>();
+    if (!gacha.loaded) void gacha.hydrate(); // collection snapshot for newRun's draft gate
+    const saved = await loadRun<RunState>();
+    // v1 saves predate the owned snapshot and per-slot UnitInstances (Task 10);
+    // discard them rather than migrate.
+    if (saved?.version === 2) run = saved;
+    else if (saved) void clearRun();
     loaded = true;
   });
 
   function begin(faction: FactionClass) {
-    run = newRun(faction);
+    run = newRun(faction, { ...gacha.units });
     void saveRun(run);
   }
 
@@ -51,9 +58,13 @@
     inBattle = true;
   }
 
-  function handleResult(result: 'player_wins' | 'enemy_wins', finalUnits: UnitStack[]) {
+  function handleResult(result: 'player_wins' | 'enemy_wins') {
     if (!run) return;
-    run = recordBattle(run, result === 'player_wins', survivorsFrom(finalUnits));
+    const won = result === 'player_wins';
+    // Coins land server-side even if the run UI moves on; a network failure
+    // only costs this battle's payout, never the run itself.
+    if (won) gacha.reward(battleReward(run.encounterIndex)).catch(() => {});
+    run = recordBattle(run, won);
     void saveRun(run);
   }
 
@@ -85,8 +96,8 @@
     <!-- Run setup: pick a faction -->
     <div class="mx-auto max-w-3xl">
       <p class="mb-4 text-slate-300">
-        Fight 10 escalating battles. Losses persist — draft reinforcements after each victory.
-        Choose your faction:
+        Fight 10 escalating battles. Victories restore your ranks, pay coins, and let you draft
+        reinforcements from units you own. Choose your faction:
       </p>
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {#each Object.entries(FACTION_INFO) as [id, info] (id)}
@@ -107,7 +118,7 @@
   {:else if inBattle}
     {#key battleKey}
       <Battle
-        playerArmy={run.army}
+        playerArmy={toBattleArmy(run.army)}
         enemyArmy={encounter?.army ?? []}
         hero={run.hero}
         allowRestart={false}
