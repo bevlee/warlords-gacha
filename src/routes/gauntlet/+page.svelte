@@ -37,7 +37,9 @@
   let loaded = $state(false);
 
   onMount(async () => {
-    if (!gacha.loaded) void gacha.hydrate(); // collection snapshot for newRun's draft gate
+    // Await the collection snapshot so begin() gates the draft against the real
+    // collection; on failure the empty snapshot just falls back to the loaner army.
+    if (!gacha.loaded) await gacha.hydrate().catch(() => {});
     const saved = await loadRun<RunState>();
     // v1 saves predate the owned snapshot and per-slot UnitInstances (Task 10);
     // discard them rather than migrate.
