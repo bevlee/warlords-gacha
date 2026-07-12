@@ -7,6 +7,7 @@ import { slugify, unitBySlug } from '../engine/catalog';
 import { resolve, type UnitInstance } from '../engine/resolve';
 import { gachaLevelModifier, levelFor } from '../gacha/config';
 import { gateCandidates } from './draft';
+import type { AllyData } from './ally';
 
 export const RUN_LENGTH = 10;
 export const BOSS_NODES = new Set([3, 7, 10]);
@@ -39,6 +40,8 @@ export interface RunState {
   status: 'map' | 'draft' | 'gate' | 'won' | 'lost';
   /** Locked at the endless gate; routes the run to the solo or ally leaderboard. */
   mode: 'solo' | 'ally';
+  /** The summoned ally (endless, mode 'ally'): snapshot of another player's army. */
+  ally: AllyData | null;
   battlesWon: number;
   startedAt: number;
 }
@@ -114,6 +117,7 @@ export function newRun(
     pendingDraft: null,
     status: 'map',
     mode: 'solo',
+    ally: null,
     battlesWon: 0,
     startedAt: Date.now(),
   };
@@ -258,8 +262,12 @@ function withDraft(run: RunState): RunState {
 }
 
 /** From the endless gate: keep fighting, solo or with an ally. One-time choice. */
-export function continueEndless(run: RunState, mode: 'solo' | 'ally'): RunState {
-  return withDraft({ ...run, mode, status: 'map' });
+export function continueEndless(
+  run: RunState,
+  mode: 'solo' | 'ally',
+  ally: AllyData | null = null
+): RunState {
+  return withDraft({ ...run, mode, ally: mode === 'ally' ? ally : null, status: 'map' });
 }
 
 /** Finish the run by choice (endless gate's End Run, or retiring mid-endless). */

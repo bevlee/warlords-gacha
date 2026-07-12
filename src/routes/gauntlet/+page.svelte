@@ -23,6 +23,8 @@
   import { battleReward } from '$lib/gauntlet/economy';
   import { armyScore } from '$lib/gauntlet/score';
   import { publishRun } from '$lib/gacha/publish';
+  import { pickAllyStacks, type AllyData } from '$lib/gauntlet/ally';
+  import { fetchRandomAlly, fetchTopByScore, fetchTopByDepth, type AllyOption } from '$lib/gacha/allies';
   import { gacha } from '$lib/gacha/state.svelte';
   import { loadRun, saveRun, clearRun } from '$lib/storage';
   import { TIER_STYLE } from '$lib/ui/tierStyle';
@@ -48,7 +50,7 @@
     // v1 saves predate the owned snapshot and per-slot UnitInstances (Task 10);
     // discard them rather than migrate.
     // (pre-endless v2 saves lack `mode`)
-    if (saved?.version === 2) run = { ...saved, mode: saved.mode ?? 'solo' };
+    if (saved?.version === 2) run = { ...saved, mode: saved.mode ?? 'solo', ally: saved.ally ?? null };
     else if (saved) void clearRun();
     loaded = true;
   });
@@ -86,10 +88,32 @@
     }).catch(() => {});
   }
 
-  function chooseEndless(mode: 'solo' | 'ally') {
+  function chooseEndless(mode: 'solo' | 'ally', ally: AllyData | null = null) {
     if (!run) return;
-    run = continueEndless(run, mode);
+    run = continueEndless(run, mode, ally);
+    allyPicking = false;
+    allyChoice = null;
     void saveRun(run);
+  }
+
+  let allyPicking = $state(false);
+  let allyChoice = $state<AllyOption | null>(null);
+  let allyBusy = $state(false);
+  let allyError = $state('');
+
+  async function findAlly(kind: 'random' | 'score' | 'depth') {
+    allyBusy = true;
+    allyError = '';
+    try {
+      const fetcher =
+        kind === 'random' ? fetchRandomAlly : kind === 'score' ? fetchTopByScore : fetchTopByDepth;
+      allyChoice = await fetcher();
+      if (!allyChoice) allyError = 'No allies published yet — complete runs create them.';
+    } catch {
+      allyError = 'Could not reach the ally roster.';
+    } finally {
+      allyBusy = false;
+    }
   }
 
   function finishRun() {
@@ -150,6 +174,7 @@
     {#key battleKey}
       <Battle
         playerArmy={toBattleArmy(run.army)}
+        allyArmy={run.ally ? pickAllyStacks(run.ally.army) : []}
         enemyArmy={encounter?.army ?? []}
         hero={run.hero}
         allowRestart={false}
@@ -211,14 +236,51 @@
         >
           Continue — Endless Solo
         </button>
-        <button
-          type="button"
-          class="rounded bg-slate-700 px-5 py-2 font-semibold text-slate-400"
-          disabled
-          title="Ally summons arrive with the next update"
-        >
-          Continue with an Ally (soon)
-        </button>
+        {#if !allyPicking}
+          <button
+            type="button"
+            class="rounded bg-fuchsia-700 px-5 py-2 font-semibold text-white hover:bg-fuchsia-600"
+            onclick={() => (allyPicking = true)}
+          >
+            Continue with an Ally
+          </button>
+        {:else}
+          <div class="rounded border border-fuchsia-700/50 bg-slate-900 p-3 text-left">
+            <p class="mb-2 text-sm font-semibold text-fuchsia-300">Summon an ally</p>
+            <div class="mb-2 flex gap-2">
+              <button type="button" class="flex-1 rounded bg-slate-700 px-2 py-1 text-xs hover:bg-slate-600"
+                disabled={allyBusy} onclick={() => findAlly('random')}>Random</button>
+              <button type="button" class="flex-1 rounded bg-slate-700 px-2 py-1 text-xs hover:bg-slate-600"
+                disabled={allyBusy} onclick={() => findAlly('score')}>Top army</button>
+              <button type="button" class="flex-1 rounded bg-slate-700 px-2 py-1 text-xs hover:bg-slate-600"
+                disabled={allyBusy} onclick={() => findAlly('depth')}>Deepest run</button>
+            </div>
+            {#if allyBusy}
+              <p class="text-xs text-slate-400">Searching…</p>
+            {:else if allyError}
+              <p class="text-xs text-red-400">{allyError}</p>
+            {:else if allyChoice}
+              <div class="mb-2 rounded bg-slate-800 p-2">
+                <p class="text-sm font-semibold text-amber-200">{allyChoice.username}</p>
+                <p class="text-xs text-slate-400">
+                  strength {allyChoice.combatScore} ·
+                  {allyChoice.army.map(a => `${a.count}× ${a.slug}`).join(' · ')}
+                </p>
+                <p class="mt-1 text-[10px] text-slate-500">
+                  Their {Math.min(3, allyChoice.army.length)} strongest stacks fight beside you, AI-controlled.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="w-full rounded bg-fuchsia-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-fuchsia-600"
+                onclick={() =>
+                  chooseEndless('ally', { username: allyChoice!.username, army: allyChoice!.army })}
+              >
+                Summon {allyChoice.username}
+              </button>
+            {/if}
+          </div>
+        {/if}
         <button
           type="button"
           class="rounded border border-slate-600 px-5 py-2 font-semibold text-slate-300 hover:bg-slate-700"
@@ -329,6 +391,17 @@
               <span class="text-xs {ts.text}">{slot.count} × {slot.unit.name}</span>
             </div>
           {/each}
+          {#if run.ally}
+            <p class="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-fuchsia-300">
+              Ally — {run.ally.username}
+            </p>
+            {#each pickAllyStacks(run.ally.army) as slot (slot.unit.name)}
+              <div class="flex items-center gap-2 py-0.5">
+                <span class="rounded ring-1 ring-fuchsia-700"><Sprite name={slot.unit.name} class="h-7 w-6" /></span>
+                <span class="text-xs text-fuchsia-200">{slot.count} × {slot.unit.name}</span>
+              </div>
+            {/each}
+          {/if}
         </div>
         <button
           type="button"

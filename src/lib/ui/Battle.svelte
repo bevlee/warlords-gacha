@@ -29,6 +29,8 @@
 
   interface Props {
     playerArmy: ArmySlot[];
+    /** AI-controlled stacks fighting on the player side (endless-mode summon). */
+    allyArmy?: ArmySlot[];
     enemyArmy: ArmySlot[];
     hero: Hero;
     onexit?: () => void;
@@ -39,6 +41,7 @@
 
   let {
     playerArmy,
+    allyArmy = [],
     enemyArmy,
     hero,
     onexit,
@@ -54,7 +57,7 @@
 
   // A battle snapshots its armies at start; later prop changes are irrelevant.
   // svelte-ignore state_referenced_locally
-  let battle: BattleState = $state(initBattle(playerArmy, enemyArmy, hero));
+  let battle: BattleState = $state(initBattle(playerArmy, enemyArmy, hero, Date.now(), allyArmy));
 
   // Incremental reveal: an action's sub-events (hit, retaliate, death) play
   // as separate beats. While a sequence runs, `animating` locks player input
@@ -94,7 +97,7 @@
   const activeUnit = $derived(battle.units.find(u => u.id === battle.currentUnitId) ?? null);
   const heroUnit = $derived(battle.units.find(u => u.isHero) ?? null);
   const isPlayerTurn = $derived(
-    battle.result === 'ongoing' && activeUnit !== null && activeUnit.side === 'player'
+    battle.result === 'ongoing' && activeUnit !== null && activeUnit.side === 'player' && !activeUnit.isAlly
   );
 
   const reachableKeys = $derived(
@@ -233,7 +236,7 @@
   $effect(() => {
     if (battle.result !== 'ongoing' || animating) return;
     const unit = battle.units.find(u => u.id === battle.currentUnitId);
-    if (!unit || unit.side !== 'enemy') return;
+    if (!unit || (unit.side !== 'enemy' && !unit.isAlly)) return;
     const timer = setTimeout(() => {
       // Re-check at fire time: forfeited or still animating while pending.
       if (battle.result !== 'ongoing' || animating) return;
@@ -327,7 +330,7 @@
     dyingIds = new Set();
     pendingSpell = null;
     resultAnnounced = false;
-    battle = initBattle(playerArmy, enemyArmy, hero, Date.now());
+    battle = initBattle(playerArmy, enemyArmy, hero, Date.now(), allyArmy);
   }
 
   function unitLabel(id: unknown): string {
