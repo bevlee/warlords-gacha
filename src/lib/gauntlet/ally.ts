@@ -20,7 +20,8 @@ export function pickAllyStacks(
   return army
     .map((s) => ({ slot: s, unit: unitBySlug(s.slug) }))
     .filter((x): x is { slot: { slug: string; count: number }; unit: NonNullable<ReturnType<typeof unitBySlug>> } => !!x.unit)
-    .map(({ slot, unit }) => ({ unit, count: slot.count }))
+    // second layer behind the server-side publish validation
+    .map(({ slot, unit }) => ({ unit, count: Math.max(1, Math.min(slot.count, 10000)) }))
     .sort((a, b) => (UNIT_COSTS[b.unit.name] ?? 0) * b.count - (UNIT_COSTS[a.unit.name] ?? 0) * a.count)
     .slice(0, cap);
 }

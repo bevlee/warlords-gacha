@@ -92,8 +92,32 @@ routerAdd(
     const score = body.combatScore;
     const army = body.army;
     if (mode !== 'solo' && mode !== 'ally') throw new BadRequestError('Invalid mode');
-    if (!Number.isInteger(depth) || depth < 1) throw new BadRequestError('Invalid depth');
-    if (!Number.isInteger(score) || score < 0) throw new BadRequestError('Invalid combatScore');
+    if (!Number.isInteger(depth) || depth < 1 || depth > 1000) {
+      throw new BadRequestError('Invalid depth');
+    }
+    if (!Number.isInteger(score) || score < 0 || score > 10000000) {
+      throw new BadRequestError('Invalid combatScore');
+    }
+    // The army is injected into OTHER players' battles as an ally — validate
+    // every entry against the catalog and sane stack sizes.
+    if (army !== undefined) {
+      const { CATALOG } = require(__hooks + '/lib/catalog.js');
+      const known = {};
+      CATALOG.forEach((u) => (known[u.slug] = true));
+      if (!Array.isArray(army) || army.length > 6) throw new BadRequestError('Invalid army');
+      for (const s of army) {
+        if (
+          !s ||
+          typeof s.slug !== 'string' ||
+          !known[s.slug] ||
+          !Number.isInteger(s.count) ||
+          s.count < 1 ||
+          s.count > 10000
+        ) {
+          throw new BadRequestError('Invalid army entry');
+        }
+      }
+    }
 
     $app.runInTransaction((tx) => {
       tx.save(

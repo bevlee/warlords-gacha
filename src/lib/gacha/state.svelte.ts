@@ -16,6 +16,22 @@ class GachaState {
   units = $state<Record<string, number>>({});
   loaded = $state(false);
   lastPulled = $state<string | null>(null);
+  private userId = pb.authStore.record?.id ?? null;
+
+  constructor() {
+    // Account switches without a reload must not leak the previous user's
+    // coins/collection into the new session.
+    pb.authStore.onChange(() => {
+      const id = pb.authStore.record?.id ?? null;
+      if (id !== this.userId) {
+        this.userId = id;
+        this.coins = 0;
+        this.units = {};
+        this.loaded = false;
+        this.lastPulled = null;
+      }
+    });
+  }
 
   async hydrate() {
     if (!pb.authStore.record) return;

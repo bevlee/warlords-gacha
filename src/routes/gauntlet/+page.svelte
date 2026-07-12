@@ -27,6 +27,7 @@
   import { fetchRandomAlly, fetchTopByScore, fetchTopByDepth, type AllyOption } from '$lib/gacha/allies';
   import { gacha } from '$lib/gacha/state.svelte';
   import { loadRun, saveRun, clearRun } from '$lib/storage';
+  import { auth } from '$lib/auth.svelte';
   import { TIER_STYLE } from '$lib/ui/tierStyle';
   import type { FactionClass } from '$lib/engine/types';
 
@@ -46,18 +47,19 @@
     // Await the collection snapshot so begin() gates the draft against the real
     // collection; on failure the empty snapshot just falls back to the loaner army.
     if (!gacha.loaded) await gacha.hydrate().catch(() => {});
-    const saved = await loadRun<RunState>();
+    const uid = auth.user?.id ?? '';
+    const saved = await loadRun<RunState>(uid);
     // v1 saves predate the owned snapshot and per-slot UnitInstances (Task 10);
     // discard them rather than migrate.
     // (pre-endless v2 saves lack `mode`)
     if (saved?.version === 2) run = { ...saved, mode: saved.mode ?? 'solo', ally: saved.ally ?? null };
-    else if (saved) void clearRun();
+    else if (saved) void clearRun(uid);
     loaded = true;
   });
 
   function begin(faction: FactionClass) {
     run = newRun(faction, { ...gacha.units });
-    void saveRun(run);
+    void saveRun(auth.user?.id ?? '', run);
   }
 
   function fight() {
@@ -75,7 +77,7 @@
     if (won) gacha.reward(battleReward(run.encounterIndex)).catch(() => {});
     run = recordBattle(run, won);
     if (run.status === 'lost' && run.battlesWon > 0) publish(run);
-    void saveRun(run);
+    void saveRun(auth.user?.id ?? '', run);
   }
 
   /** One publication per run, at its terminal point (loss, or ending by choice). */
@@ -93,7 +95,7 @@
     run = continueEndless(run, mode, ally);
     allyPicking = false;
     allyChoice = null;
-    void saveRun(run);
+    void saveRun(auth.user?.id ?? '', run);
   }
 
   let allyPicking = $state(false);
@@ -120,19 +122,19 @@
     if (!run) return;
     run = endRun(run);
     publish(run);
-    void saveRun(run);
+    void saveRun(auth.user?.id ?? '', run);
   }
 
   function pick(card: UnitCard) {
     if (!run) return;
     run = applyPick(run, card);
-    void saveRun(run);
+    void saveRun(auth.user?.id ?? '', run);
   }
 
   async function abandon() {
     run = null;
     inBattle = false;
-    await clearRun();
+    await clearRun(auth.user?.id ?? '');
   }
 
   const unitFor = (name: string) =>

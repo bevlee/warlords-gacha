@@ -11,17 +11,19 @@ function db(): Promise<IDBPDatabase> {
   });
 }
 
-const RUN_KEY = 'gauntletRun';
+// Runs are scoped per account so switching users on one device never resumes
+// (or publishes) someone else's run.
+const runKey = (userId: string) => `gauntletRun:${userId}`;
 
-export async function loadRun<T>(): Promise<T | null> {
-  return (await (await db()).get(STORE, RUN_KEY)) ?? null;
+export async function loadRun<T>(userId: string): Promise<T | null> {
+  return (await (await db()).get(STORE, runKey(userId))) ?? null;
 }
 
-export async function saveRun<T>(run: T): Promise<void> {
+export async function saveRun<T>(userId: string, run: T): Promise<void> {
   // JSON round-trip: deep-plain copy, state proxies aren't structured-cloneable.
-  await (await db()).put(STORE, JSON.parse(JSON.stringify(run)), RUN_KEY);
+  await (await db()).put(STORE, JSON.parse(JSON.stringify(run)), runKey(userId));
 }
 
-export async function clearRun(): Promise<void> {
-  await (await db()).delete(STORE, RUN_KEY);
+export async function clearRun(userId: string): Promise<void> {
+  await (await db()).delete(STORE, runKey(userId));
 }
