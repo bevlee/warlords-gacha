@@ -7,6 +7,8 @@
   import {
     newRun,
     recordBattle,
+    continueEndless,
+    endRun,
     applyPick,
     generateGauntletEnemy,
     toBattleArmy,
@@ -19,6 +21,8 @@
     type GauntletEncounter,
   } from '$lib/gauntlet/run';
   import { battleReward } from '$lib/gauntlet/economy';
+  import { armyScore } from '$lib/gauntlet/score';
+  import { publishRun } from '$lib/gacha/publish';
   import { gacha } from '$lib/gacha/state.svelte';
   import { loadRun, saveRun, clearRun } from '$lib/storage';
   import { TIER_STYLE } from '$lib/ui/tierStyle';
@@ -43,7 +47,8 @@
     const saved = await loadRun<RunState>();
     // v1 saves predate the owned snapshot and per-slot UnitInstances (Task 10);
     // discard them rather than migrate.
-    if (saved?.version === 2) run = saved;
+    // (pre-endless v2 saves lack `mode`)
+    if (saved?.version === 2) run = { ...saved, mode: saved.mode ?? 'solo' };
     else if (saved) void clearRun();
     loaded = true;
   });
@@ -67,6 +72,30 @@
     // only costs this battle's payout, never the run itself.
     if (won) gacha.reward(battleReward(run.encounterIndex)).catch(() => {});
     run = recordBattle(run, won);
+    if (run.status === 'lost' && run.battlesWon > 0) publish(run);
+    void saveRun(run);
+  }
+
+  /** One publication per run, at its terminal point (loss, or ending by choice). */
+  function publish(r: RunState) {
+    publishRun({
+      mode: r.mode,
+      depth: r.battlesWon,
+      combatScore: armyScore(r.army),
+      army: r.army.map(s => ({ slug: s.instance.slug, count: s.count })),
+    }).catch(() => {});
+  }
+
+  function chooseEndless(mode: 'solo' | 'ally') {
+    if (!run) return;
+    run = continueEndless(run, mode);
+    void saveRun(run);
+  }
+
+  function finishRun() {
+    if (!run) return;
+    run = endRun(run);
+    publish(run);
     void saveRun(run);
   }
 
@@ -133,7 +162,13 @@
     <!-- Draft: pick 1 of 3 -->
     <div class="mx-auto max-w-2xl">
       <h2 class="mb-1 text-lg font-semibold text-amber-200">Victory! Choose your reinforcements</h2>
-      <p class="mb-4 text-sm text-slate-400">Battle {run.encounterIndex - 1} won — {RUN_LENGTH - run.encounterIndex + 1} to go.</p>
+      <p class="mb-4 text-sm text-slate-400">
+        {#if run.encounterIndex > RUN_LENGTH}
+          Endless depth {run.encounterIndex - 1} cleared — the gauntlet deepens.
+        {:else}
+          Battle {run.encounterIndex - 1} won — {RUN_LENGTH - run.encounterIndex + 1} to go.
+        {/if}
+      </p>
       <div class="grid grid-cols-3 gap-3">
         {#each run.pendingDraft ?? [] as card (card.unitName)}
           {@const unit = unitFor(card.unitName)}
@@ -161,6 +196,38 @@
         Your army: {run.army.map(s => `${s.count}× ${s.unit.name}`).join(' · ')}
       </div>
     </div>
+  {:else if run.status === 'gate'}
+    <!-- Endless gate: one-time choice after conquering node 10 -->
+    <div class="mx-auto max-w-md rounded-lg border border-amber-500/40 bg-slate-800 p-6 text-center">
+      <p class="mb-2 text-4xl font-bold text-amber-300">🏆 Gauntlet conquered!</p>
+      <p class="mb-4 text-slate-300">
+        Depth 10 reached. Venture into the endless beyond, or bank your result now.
+      </p>
+      <div class="flex flex-col gap-2">
+        <button
+          type="button"
+          class="rounded bg-amber-600 px-5 py-2 font-semibold text-white hover:bg-amber-500"
+          onclick={() => chooseEndless('solo')}
+        >
+          Continue — Endless Solo
+        </button>
+        <button
+          type="button"
+          class="rounded bg-slate-700 px-5 py-2 font-semibold text-slate-400"
+          disabled
+          title="Ally summons arrive with the next update"
+        >
+          Continue with an Ally (soon)
+        </button>
+        <button
+          type="button"
+          class="rounded border border-slate-600 px-5 py-2 font-semibold text-slate-300 hover:bg-slate-700"
+          onclick={finishRun}
+        >
+          End Run — bank depth {run.battlesWon}
+        </button>
+      </div>
+    </div>
   {:else if run.status === 'won' || run.status === 'lost'}
     <!-- Run summary -->
     <div class="mx-auto max-w-md rounded-lg border border-slate-700 bg-slate-800 p-6 text-center">
@@ -168,7 +235,8 @@
         {run.status === 'won' ? '🏆 Gauntlet conquered!' : 'Run over'}
       </p>
       <p class="mb-1 text-slate-300">
-        {FACTION_INFO[run.faction].name} · {run.battlesWon} / {RUN_LENGTH} battles won
+        {FACTION_INFO[run.faction].name} ·
+        {#if run.battlesWon > RUN_LENGTH}endless depth {run.battlesWon} ({run.mode}){:else}{run.battlesWon} / {RUN_LENGTH} battles won{/if}
       </p>
       <p class="mb-4 text-sm text-slate-400">Hero reached level {run.hero.level}</p>
       <button
@@ -183,6 +251,34 @@
     <!-- Run map -->
     <div class="mx-auto flex max-w-3xl gap-6">
       <div class="flex-1">
+        {#if run.encounterIndex > RUN_LENGTH}
+          {@const enc = generateGauntletEnemy(run)}
+          <div class="rounded-lg border border-fuchsia-700/50 bg-slate-800 p-4">
+            <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-fuchsia-300">
+              Endless {run.mode === 'ally' ? '— with ally' : '— solo'}
+            </p>
+            <p class="mb-3 text-2xl font-bold text-slate-100">Depth {run.encounterIndex}</p>
+            <div class="mb-3 flex items-center gap-3 rounded border border-amber-400 bg-slate-700 px-3 py-2">
+              <span class="flex-1 text-sm text-slate-200">
+                {FACTION_INFO[enc.faction].name} warband — strength ~{encounterBudget(run.encounterIndex)}
+              </span>
+              <button
+                type="button"
+                class="rounded bg-amber-600 px-4 py-1 text-sm font-semibold text-white hover:bg-amber-500"
+                onclick={fight}
+              >
+                Fight ⚔️
+              </button>
+            </div>
+            <button
+              type="button"
+              class="w-full rounded border border-slate-600 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-700"
+              onclick={finishRun}
+            >
+              Retire — bank depth {run.battlesWon}
+            </button>
+          </div>
+        {:else}
         {#each [3, 2, 1] as act (act)}
           <p class="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
             {ACT_NAMES[act as 1 | 2 | 3]}
@@ -216,6 +312,7 @@
             </div>
           {/each}
         {/each}
+        {/if}
       </div>
 
       <div class="w-56 shrink-0">

@@ -35,7 +35,10 @@ export interface RunState {
    *  drafting and sets each instance's gacha-level modifier. */
   owned: Record<string, number>;
   pendingDraft: UnitCard[] | null;
-  status: 'map' | 'draft' | 'won' | 'lost';
+  /** 'gate' = endless gate: shown once, after conquering node 10. */
+  status: 'map' | 'draft' | 'gate' | 'won' | 'lost';
+  /** Locked at the endless gate; routes the run to the solo or ally leaderboard. */
+  mode: 'solo' | 'ally';
   battlesWon: number;
   startedAt: number;
 }
@@ -110,6 +113,7 @@ export function newRun(
     owned,
     pendingDraft: null,
     status: 'map',
+    mode: 'solo',
     battlesWon: 0,
     startedAt: Date.now(),
   };
@@ -242,8 +246,23 @@ export function recordBattle(run: RunState, won: boolean): RunState {
     pendingDraft: null,
     status: 'map',
   };
-  if (run.encounterIndex >= RUN_LENGTH) return { ...next, status: 'won' };
-  const cards = draftOptions(next);
-  // Thin collections can gate the draft pool down to nothing — skip the draft.
-  return cards.length > 0 ? { ...next, status: 'draft', pendingDraft: cards } : next;
+  // Conquering node 10 opens the endless gate instead of ending the run.
+  if (run.encounterIndex === RUN_LENGTH) return { ...next, status: 'gate' };
+  return withDraft(next);
+}
+
+/** Thin collections can gate the draft pool down to nothing — skip the draft. */
+function withDraft(run: RunState): RunState {
+  const cards = draftOptions(run);
+  return cards.length > 0 ? { ...run, status: 'draft', pendingDraft: cards } : run;
+}
+
+/** From the endless gate: keep fighting, solo or with an ally. One-time choice. */
+export function continueEndless(run: RunState, mode: 'solo' | 'ally'): RunState {
+  return withDraft({ ...run, mode, status: 'map' });
+}
+
+/** Finish the run by choice (endless gate's End Run, or retiring mid-endless). */
+export function endRun(run: RunState): RunState {
+  return { ...run, status: 'won' };
 }

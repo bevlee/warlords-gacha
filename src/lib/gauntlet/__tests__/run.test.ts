@@ -7,6 +7,8 @@ import {
   draftOptions,
   applyPick,
   recordBattle,
+  continueEndless,
+  endRun,
   makeInstance,
   toBattleArmy,
   mixSeed,
@@ -169,10 +171,35 @@ describe('gauntlet run', () => {
     expect(next.pendingDraft).toHaveLength(3);
   });
 
-  it('recordBattle: winning encounter 10 ends the run; losing ends it anywhere', () => {
+  it('recordBattle: winning encounter 10 opens the endless gate; losing ends the run anywhere', () => {
     const run = { ...newRun('barbarian', ALL_OWNED, 9), encounterIndex: 10 };
-    expect(recordBattle(run, true).status).toBe('won');
+    expect(recordBattle(run, true).status).toBe('gate');
     expect(recordBattle(newRun('barbarian', ALL_OWNED, 9), false).status).toBe('lost');
+  });
+
+  it('continueEndless locks the mode and resumes at depth 11', () => {
+    const atGate = recordBattle({ ...newRun('barbarian', ALL_OWNED, 9), encounterIndex: 10 }, true);
+    const endless = continueEndless(atGate, 'ally');
+
+    expect(endless.mode).toBe('ally');
+    expect(endless.encounterIndex).toBe(11);
+    expect(['map', 'draft']).toContain(endless.status);
+  });
+
+  it('endless wins keep the run going instead of ending it', () => {
+    const atGate = recordBattle({ ...newRun('barbarian', ALL_OWNED, 9), encounterIndex: 10 }, true);
+    const endless = continueEndless(atGate, 'solo');
+    const next = recordBattle({ ...endless, status: 'map', pendingDraft: null }, true);
+
+    expect(next.status).not.toBe('won');
+    expect(next.status).not.toBe('gate');
+    expect(next.encounterIndex).toBe(12);
+  });
+
+  it('endRun finishes the run by choice', () => {
+    const atGate = recordBattle({ ...newRun('barbarian', ALL_OWNED, 9), encounterIndex: 10 }, true);
+    expect(endRun(atGate).status).toBe('won');
+    expect(endRun(atGate).battlesWon).toBe(atGate.battlesWon);
   });
 
   it('recordBattle: skips the draft when the gated pool is empty', () => {
